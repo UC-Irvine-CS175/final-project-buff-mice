@@ -90,7 +90,8 @@ class BPSMouseDataset(torch.utils.data.Dataset):
             self.meta_df = pd.read_csv(meta_csv_full_path)
         
         # One-hot encode the particle type for classification task
-        self.meta_df = pd.get_dummies(self.meta_df, columns=["particle_type"])
+        #self.meta_df = pd.get_dummies(self.meta_df, columns=["particle_type"])
+        self.meta_df = pd.get_dummies(self.meta_df, columns=["dose_Gy"])
 
         self.transform = transform
     
@@ -141,6 +142,7 @@ class BPSMouseDataset(torch.utils.data.Dataset):
         else:
             img_tensor = img_array
 
+        """
         # Fetch one hot encoded labels for all classes of particle_type as a Series
         particle_type_tensor = row[['particle_type_Fe', 'particle_type_X-ray']]
         # Convert Series to numpy array
@@ -150,8 +152,21 @@ class BPSMouseDataset(torch.utils.data.Dataset):
         particle_type_tensor = torch.from_numpy(particle_type_tensor)
         # Convert tensor data type to Float
         particle_type_tensor = particle_type_tensor.type(torch.FloatTensor)
+        """
 
-        return img_tensor, particle_type_tensor
+        # Fetch one hot encoded labels for all classes of particle_type as a Series
+        dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0']]
+        # Convert Series to numpy array
+        dosage_type_tensor = dosage_type_tensor.to_numpy().astype(np.bool_)
+        
+        # Convert One Hot Encoded labels to tensor
+        dosage_type_tensor = torch.from_numpy(dosage_type_tensor)
+        # Convert tensor data type to Float
+        dosage_type_tensor = dosage_type_tensor.type(torch.FloatTensor)
+
+
+        #return img_tensor, particle_type_tensor
+        return img_tensor, dosage_type_tensor
 
 def main():
     """main function to test PyTorch Dataset class"""
