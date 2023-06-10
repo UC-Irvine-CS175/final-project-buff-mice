@@ -155,7 +155,9 @@ class BPSMouseDataset(torch.utils.data.Dataset):
         """
 
         # Fetch one hot encoded labels for all classes of particle_type as a Series
-        dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0']]
+        dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0', 'dose_Gy_0.0', 'dose_Gy_0.1', 'dose_Gy_0.3']]
+        #dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0']]
+
         # Convert Series to numpy array
         dosage_type_tensor = dosage_type_tensor.to_numpy().astype(np.bool_)
         
