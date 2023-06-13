@@ -85,8 +85,8 @@ class BPSConfig:
 
     """
     data_dir:           str = root / 'data' / 'processed'
-    train_meta_fname:   str = 'meta_dose_hi_hr_4_post_exposure_train.csv'
-    val_meta_fname:     str = 'meta_dose_hi_hr_4_post_exposure_test.csv'
+    train_meta_fname:   str = 'meta_train.csv'
+    val_meta_fname:     str = 'meta_test.csv'
     save_vis_dir:       str = root / 'models' / 'dummy_vis'
     save_models_dir:    str = root / 'models' / 'baselines'
     batch_size:         int = 64
@@ -100,7 +100,7 @@ class BPSConfig:
 
 
 class RadiationClassifier(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=5):
         super(RadiationClassifier, self).__init__()
         self.squeeze_net = squeezenet1_1(pretrained=True)
         self.squeeze_net.classifier[1] = nn.Conv2d(512, num_classes, kernel_size=(1, 1))
@@ -144,7 +144,7 @@ def main():
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.1, verbose=True)
 
     # Epochs 
-    num_epochs = 100
+    num_epochs = 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -157,8 +157,9 @@ def main():
 
         # Iterate through the batches of images from the dataloader
         for batch_idx, (images, labels) in tqdm(enumerate(bps_datamodule.train_dataloader()), desc="Running model inference"):
-            images, labels = images.to(device), labels.to(device)
+            images = images.to(device) 
             labels = np.argmax(labels, axis=1)
+            labels = labels.to(device)
 
             images = images.repeat(1, 3, 1, 1)
 
@@ -184,40 +185,40 @@ def main():
         scheduler.step(train_loss)
     
     # Save the trained model
-    model_path = "trained_CNN_model3.pth"
+    model_path = r".\saved_models\delete_this.pth"
     torch.save(model.state_dict(), model_path)
     print("Trained model saved at:", model_path)
 
     
-    bps_datamodule.setup(stage="validate")
+    # bps_datamodule.setup(stage="validate")
 
-    with torch.no_grad():
-        model.eval()
-        test_loss = 0.0
-        test_correct = 0
-        test_total = 0
+    # with torch.no_grad():
+    #     model.eval()
+    #     test_loss = 0.0
+    #     test_correct = 0
+    #     test_total = 0
 
-        for batch_idx, (images, labels) in tqdm(enumerate(bps_datamodule.val_dataloader()), desc="Running model test"):
+    #     for batch_idx, (images, labels) in tqdm(enumerate(bps_datamodule.val_dataloader()), desc="Running model test"):
 
-            images, labels = images.to(device), labels.to(device)
-            labels = np.argmax(labels, axis=1)
+    #         images, labels = images.to(device), labels.to(device)
+    #         labels = np.argmax(labels, axis=1)
 
-            # Repeat the single channel to have 3 channels
-            images = images.repeat(1, 3, 1, 1)
+    #         # Repeat the single channel to have 3 channels
+    #         images = images.repeat(1, 3, 1, 1)
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+    #         outputs = model(images)
+    #         loss = criterion(outputs, labels)
 
-            _, predicted = torch.max(outputs.data, 1)
+    #         _, predicted = torch.max(outputs.data, 1)
 
-            test_total += labels.size(0)
-            test_correct += (predicted == labels).sum().item()
-            test_loss += loss.item()
+    #         test_total += labels.size(0)
+    #         test_correct += (predicted == labels).sum().item()
+    #         test_loss += loss.item()
 
-        test_loss /= 100
-        test_accuracy = test_correct / test_total
+    #     test_loss /= 100
+    #     test_accuracy = test_correct / test_total
 
-        print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
+    #     print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
 
 if __name__ == '__main__':
     main()

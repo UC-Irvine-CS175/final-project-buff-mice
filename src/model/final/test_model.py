@@ -40,7 +40,7 @@ from src.dataset.augmentation import(
 
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision.models import resnet50
+from torchvision.models import resnet50, ResNet50_Weights, resnet34, ResNet34_Weights
 from torchvision.models import squeezenet1_1
 
 
@@ -82,8 +82,8 @@ class BPSConfig:
 
     """
     data_dir:           str = root / 'data' / 'processed'
-    train_meta_fname:   str = 'meta_dose_hi_hr_4_post_exposure_train.csv'
-    val_meta_fname:     str = 'meta_dose_hi_hr_4_post_exposure_test.csv'
+    train_meta_fname:   str = 'meta_train.csv'
+    val_meta_fname:     str = 'meta_test.csv'
     save_vis_dir:       str = root / 'models' / 'dummy_vis'
     save_models_dir:    str = root / 'models' / 'baselines'
     batch_size:         int = 64
@@ -97,7 +97,7 @@ class BPSConfig:
 
 
 class RadiationClassifier(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=5):
         super(RadiationClassifier, self).__init__()
         self.squeeze_net = squeezenet1_1(pretrained=True)
         self.squeeze_net.classifier[1] = nn.Conv2d(512, num_classes, kernel_size=(1, 1))
@@ -109,6 +109,30 @@ class RadiationClassifier(nn.Module):
         x = x.view(x.size(0), -1)
         #x = self.dropout(x)
         return x
+    
+# class RadiationClassifier(nn.Module):
+#     def __init__(self, num_classes=5):
+#         super(RadiationClassifier, self).__init__()
+#         self.resnet = resnet50(weights=ResNet50_Weights.DEFAULT)
+#         num_features = self.resnet.fc.in_features
+#         self.resnet.fc = nn.Linear(num_features, num_classes)
+#         #self.dropout = nn.Dropout(0.5)
+
+#     def forward(self, x):
+#         x = self.resnet(x)
+#         #x = self.dropout(x)
+#         return x
+    
+# class RadiationClassifier(nn.Module):
+#     def __init__(self, num_classes=5):
+#         super(RadiationClassifier, self).__init__()
+#         self.resnet = resnet.resnet34(weights=ResNet34_Weights.DEFAULT)
+#         num_features = self.resnet.fc.in_features
+#         self.resnet.fc = nn.Linear(num_features, num_classes)
+
+#     def forward(self, x):
+#         x = self.resnet(x)
+#         return x
 
 def main():
     # Set random seed for reproducibility
@@ -133,14 +157,15 @@ def main():
     # Create the model
     model = RadiationClassifier()
     # Saved trained model
-    model_path = "trained_CNN_model100.pth"
+    model_path = r".\saved_models\alldata_CNN_model_epoch100.pth"
     #loading model
     model.load_state_dict(torch.load(model_path))
 
     # Define the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     
     
     bps_datamodule.setup(stage="validate")
@@ -153,8 +178,9 @@ def main():
 
         for batch_idx, (images, labels) in tqdm(enumerate(bps_datamodule.val_dataloader()), desc="Running model test"):
 
-            images, labels = images.to(device), labels.to(device)
+            images= images.to(device)
             labels = np.argmax(labels, axis=1)
+            labels = labels.to(device)
 
             # Repeat the single channel to have 3 channels
             images = images.repeat(1, 3, 1, 1)
