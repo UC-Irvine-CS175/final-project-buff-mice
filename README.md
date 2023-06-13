@@ -16,4 +16,4 @@ Testing - Run test_model.py under src\model\final. The default active model is s
 ![PyTorch Lightning](https://img.shields.io/badge/pytorch-lightning-blue.svg?logo=PyTorch%20Lightning)<br>
 - Python
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)<br>
-- Weights and Biases
+
