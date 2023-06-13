@@ -143,3 +143,4 @@ def plot_3D_scatter_plot(cps_df: pd.DataFrame,
     # Show the plot
     plt.savefig(f"{scatter_fname}.png")
     plt.show()
+
