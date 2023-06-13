@@ -1,47 +1,40 @@
 """
 This module contains the BPSMouseDataset class which is a subclass of torch.utils.data.Dataset.
 """
-from src.dataset.augmentation import (
-    NormalizeBPS,
-    ResizeBPS,
-    VFlipBPS,
-    HFlipBPS,
-    RotateBPS,
-    RandomCropBPS,
-    ToTensor
-)
-
 import os
+from pytorch_lightning.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 import torch
 import cv2
 from torch.utils.data import Dataset, DataLoader
-
 import pytorch_lightning as pl
 from torchvision import transforms, utils
-
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 import numpy as np
 from matplotlib import pyplot as plt
+import pyprojroot
 from pyprojroot import here
 
-root = here()
+root = pyprojroot.find_root(pyprojroot.has_dir(".git"))
+pytorch_dataset_dir = root / 'dataset'
+data_dir = root / 'data'
+
+import sys
+sys.path.append(str(root))
 
 import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
 import io
 from io import BytesIO
+from PIL import Image
+from src.dataset.augmentation import (
+    NormalizeBPS,
+    ResizeBPS,
+    ToTensor
+)
 
-""" 
-Note about Tensor:
-        PyTorch expects tensors to have the following dimensions:
-        (batch_size, channels, height, width)
-        A numpy array has the following dimensions:
-        (height, width, channels)
-"""
-
+from src.data_utils import get_bytesio_from_s3
 
 class BPSMouseDataset(torch.utils.data.Dataset):
     """
@@ -50,14 +43,18 @@ class BPSMouseDataset(torch.utils.data.Dataset):
     args:
         meta_csv_file (str): name of the metadata csv file
         meta_root_dir (str): path to the metadata csv file
+        s3_client (boto3.client): boto3 client for s3
         bucket_name (str): name of bucket from AWS open source registry.
         transform (callable, optional): Optional transform to be applied on a sample.
+        file_on_prem (bool): True if the data is on the local file system, False if the data is on S3
 
     attributes:
-        meta_df (pd.DataFrame): dataframe containing the metadata
+        s3_client (boto3.client): boto3 client for s3
         bucket_name (str): name of bucket from AWS open source registry.
-        train_df (pd.DataFrame): dataframe containing the metadata for the training set
-        test_df (pd.DataFrame): dataframe containing the metadata for the test set
+        on_prem (bool): True if the data is on the local file system, False if the data is on S3
+        meta_dir (str): path to the metadata csv file
+        meta_csv (str): name of the metadata csv file
+        meta_df (pd.DataFrame): dataframe containing the metadata
         transform (callable): The transform to be applied on a sample.
 
     raises:
@@ -72,21 +69,32 @@ class BPSMouseDataset(torch.utils.data.Dataset):
             bucket_name: str = None,
             transform=None,
             file_on_prem:bool = True):
-        self.meta_csv_file = os.path.join(meta_root_dir, meta_csv_file)
-        self.meta_root_dir = meta_root_dir
+        """
+        Constructor for BPSMouseDataset class.
+        """    
         self.s3_client = s3_client
         self.bucket_name = bucket_name
+        self.on_prem = file_on_prem
+        self.meta_dir = meta_root_dir
+        self.meta_csv = meta_csv_file
+
+        meta_csv_full_path = f'{self.meta_dir}/{self.meta_csv}'
+
+        if not file_on_prem:
+            # create a BytesIO object from the file contents
+            file_buffer = get_bytesio_from_s3(
+                s3_client=s3_client, bucket_name=bucket_name, file_path=meta_csv_full_path
+            )
+            self.meta_df = pd.read_csv(file_buffer)
+        else:
+            self.meta_df = pd.read_csv(meta_csv_full_path)
+        
+        # One-hot encode the particle type for classification task
+        #self.meta_df = pd.get_dummies(self.meta_df, columns=["particle_type"])
+        self.meta_df = pd.get_dummies(self.meta_df, columns=["dose_Gy"])
+
         self.transform = transform
-        self.file_on_prem = file_on_prem
-        # formulate the full path to metadata csv file
-        # if the file is not on the local file system, use the get_bytesio_from_s3 function
-        # to fetch the file as a BytesIO object, else read the file from the local file system.
-        if not os.path.exists(self.meta_csv_file):
-            raise ValueError(f"{self.meta_csv_file} does not exist")
-
-        self.meta_df = pd.read_csv(self.meta_csv_file)
-
-
+    
     def __len__(self):
         """
         Returns the number of images in the dataset.
@@ -109,99 +117,79 @@ class BPSMouseDataset(torch.utils.data.Dataset):
         """
 
         # get the bps image file name from the metadata dataframe at the given index
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
+        row = self.meta_df.iloc[idx]
+        img_fname = row["filename"]
 
         # formulate path to image given the root directory (note meta.csv is in the
         # same directory as the images)
-        img_name = os.path.join(self.meta_root_dir, self.meta_df.iloc[idx, 0])
 
-        # If on_prem is False, then fetch the image from s3 bucket using the get_bytesio_from_s3
-        # function, get the contents of the buffer returned, and convert it to a  numpy array
-        # with datatype unsigned 16 bit integer used to represent microscopy images.
-        # If on_prem is True load the image from local. 
-        if not self.file_on_prem:
-            s3_object = self.s3_client.get_object(Bucket=self.bucket_name, Key=img_name)
-            img_data = s3_object['Body'].read()
-            img = cv2.imdecode(np.frombuffer(img_data, np.uint8), cv2.IMREAD_COLOR)
+        img_key = f"{self.meta_dir}/{img_fname}"
+
+        # write code to fetch image from s3 bucket or from the local file system based on
+        # the boolean value of self.on_prem
+
+        if not self.on_prem:
+            img_bytesio = get_bytesio_from_s3(self.s3_client, self.bucket_name, img_key)
+            img_bytesio.seek(0)
+            img_pil = Image.open(io.BytesIO(img_bytesio.read()))
+            img_array = np.array(img_pil)
+
         else:
-            img = cv2.imread(img_name, cv2.IMREAD_COLOR)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        label = self.meta_df.iloc[idx, 2]
-        # apply tranformation if available
+            img_array = cv2.imread(img_key, cv2.IMREAD_ANYDEPTH)
+
         if self.transform:
-            img = self.transform(img)
-        # return the image and associated label
-        return img, label
+            img_tensor = self.transform(img_array)
+        else:
+            img_tensor = img_array
+
+        """
+        # Fetch one hot encoded labels for all classes of particle_type as a Series
+        particle_type_tensor = row[['particle_type_Fe', 'particle_type_X-ray']]
+        # Convert Series to numpy array
+        particle_type_tensor = particle_type_tensor.to_numpy().astype(np.bool_)
+        
+        # Convert One Hot Encoded labels to tensor
+        particle_type_tensor = torch.from_numpy(particle_type_tensor)
+        # Convert tensor data type to Float
+        particle_type_tensor = particle_type_tensor.type(torch.FloatTensor)
+        """
+
+        # Fetch one hot encoded labels for all classes of particle_type as a Series
+        #dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_0.0', 'dose_Gy_0.3']]
+        #dosage_type_tensor = row[['dose_Gy_1.0', 'dose_Gy_0.0', 'dose_Gy_0.1']]
+        dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0', 'dose_Gy_0.0', 'dose_Gy_0.1', 'dose_Gy_0.3']]
+        #dosage_type_tensor = row[['dose_Gy_0.82', 'dose_Gy_1.0']]
+
+        # Convert Series to numpy array
+        dosage_type_tensor = dosage_type_tensor.to_numpy().astype(np.bool_)
+        
+        # Convert One Hot Encoded labels to tensor
+        dosage_type_tensor = torch.from_numpy(dosage_type_tensor)
+        # Convert tensor data type to Float
+        dosage_type_tensor = dosage_type_tensor.type(torch.FloatTensor)
 
 
-def show_label_batch(image: torch.Tensor, label: str):
-    """Show image with label for a batch of samples."""
-    images_batch, label_batch = \
-            image, label
-    batch_size = len(images_batch)
-    im_size = images_batch.size(2)
-    grid_border_size = 2
-
-    # grid is a 4 dimensional tensor (channels, height, width, number of images/batch)
-    # images are 3 dimensional tensor (channels, height, width), where channels is 1
-    # utils.make_grid() takes a 4 dimensional tensor as input and returns a 3 dimensional tensor
-    # the returned tensor has the dimensions (channels, height, width), where channels is 3
-    # the returned tensor represents a grid of images
-    grid = utils.make_grid(images_batch)
-    plt.imshow(grid.numpy().transpose((1, 2, 0)))
-    plt.title(f"Label: {label}")
-    plt.savefig('test_grid_1_batch.png')
-
-
+        #return img_tensor, particle_type_tensor
+        return img_tensor, dosage_type_tensor
 
 def main():
-    """main function to test PyTorch Dataset class (Make sure the directory structure points to where the data is stored)"""
+    """main function to test PyTorch Dataset class"""
     bucket_name = "nasa-bps-training-data"
     s3_path = "Microscopy/train"
     s3_meta_csv_path = f"{s3_path}/meta.csv"
+    s3_meta_fname = "meta.csv"
 
     #### testing get file functions from s3 ####
-
-    local_file_path = "../data/raw"
-    local_train_csv_path = "../data/processed/meta_dose_hi_hr_4_post_exposure_train.csv"
-
-    print(root)
-
+    local_train_dir = data_dir / 'processed'
 
     #### testing dataset class ####
-    train_csv_path = 'meta_dose_hi_hr_4_post_exposure_train.csv'
-    training_bps = BPSMouseDataset(train_csv_path, '../data/processed', transform=None, file_on_prem=True)
+    train_csv_file = 'meta_dose_hi_hr_4_post_exposure_train.csv'
+    training_bps = BPSMouseDataset(train_csv_file,
+                                   local_train_dir,
+                                   transform=None,
+                                   file_on_prem=True)
     print(training_bps.__len__())
     print(training_bps.__getitem__(0))
-
-    transformed_dataset = BPSMouseDataset(train_csv_path,
-                                           '../data/processed',
-                                           transform=transforms.Compose([
-                                               NormalizeBPS(),
-                                               ResizeBPS(224, 224),
-                                               VFlipBPS(),
-                                               HFlipBPS(),
-                                               RotateBPS(90),
-                                               RandomCropBPS(200, 200),
-                                               ToTensor()
-                                            ]),
-                                            file_on_prem=True
-                                           )
-
-    # Use Dataloader to package data for batching, shuffling, 
-    # and loading in parallel using multiprocessing workers
-    # Packaging is image, label
-    dataloader = DataLoader(transformed_dataset, batch_size=4,
-                        shuffle=True, num_workers=2)
-
-    for batch, (image, label) in enumerate(dataloader):
-        print(batch, image, label)
-
-        if batch == 5:
-            show_label_batch(image, label)
-            print(image.shape)
-            break
 
 if __name__ == "__main__":
     main()

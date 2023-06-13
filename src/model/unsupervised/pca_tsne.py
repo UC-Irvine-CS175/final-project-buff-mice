@@ -210,8 +210,8 @@ def main():
     np.random.seed(seed)
 
     data_dir = root / 'data' / 'processed'
-    train_meta_fname = 'meta_dose_hi_hr_4_post_exposure_train.csv'
-    val_meta_fname = 'meta_dose_hi_hr_4_post_exposure_test.csv'
+    train_meta_fname = 'meta_train.csv'
+    val_meta_fname = 'meta_test.csv'
     save_dir = root / 'models' / 'baselines'
     batch_size = 2
     max_epochs = 3
@@ -234,7 +234,7 @@ def main():
     # to be used for training and validation depending on the stage ('train' or 'val')
     bps_datamodule.setup(stage=dm_stage)
 
-    image_stream_1d, all_labels = preprocess_images(lt_datamodule=bps_datamodule.train_dataloader, num_images=100)
+    image_stream_1d, all_labels = preprocess_images(lt_datamodule=bps_datamodule.train_dataloader, num_images=5000)
     print(f'image_stream_1d.shape: {image_stream_1d.shape}')
     # Project the flattened images onto the principal components
     IMAGE_SHAPE = (64, 64)
