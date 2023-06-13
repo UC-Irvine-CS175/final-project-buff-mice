@@ -1,5 +1,10 @@
 '''
-Image Augmentations for use with the BPSMouseDataset class and PyTorch Transforms
+The purpose of augmentations is to increase the size of the training set
+by applying random (or selected) transformations to the training images.
+
+Create augmentation classes for use with the PyTorch Compose class 
+that takes a list of transformations and applies them in order, which 
+can be chained together simply by defining a __call__ method for each class. 
 '''
 import cv2
 import numpy as np
@@ -12,38 +17,17 @@ class NormalizeBPS(object):
         """
         Normalize the array values between 0 - 1
         """
-        # Normalizing uint numpy arrays representing images to a floating point
-        # range between 0 and 1 brings the pixel values of the image to a common
-        # scale that is compatible with most deep learning models.
-        # Additionally, normalizing the pixel values can help to reduce the effects
-        # of differences in illumination and contrast across different images, which
-        # can be beneficial for model training. To normalize, we divide each pixel
-        # value by the maximum value of the uint16 data type.
-
-        # Normalize array values between 0 - 1
-        img_array = img_array / np.iinfo(np.uint16).max
-
-        # Conversion of uint16 -> float32
-        img_normalized = img_array.astype(np.float32)
-
-        # img_normalized = img_float / np.max(img_float)  # 65535.0
-
-        return img_normalized
-
-class RescaleBPS(object):
-    def __call__(self, img_array) -> np.array(np.float32):
-        """
-        Rescale the array values between -1 and 1
-        """
-        img_array = img_array / np.iinfo(np.uint16).max
-        img_float = img_array.astype(np.float32)
-        img_rescaled = img_float * 2 - 1
-        return img_rescaled
+        print("JERERERERERE")
+        print(img_array)
+        mag = np.linalg.norm(img_array)
+        if mag == 0:
+            return img_array
+        return img_array / mag
 
 class ResizeBPS(object):
     def __init__(self, resize_height: int, resize_width:int):
-        self.resize_width = resize_width
-        self.resize_height = resize_height
+        self.height = resize_height
+        self.width = resize_width
     
     def __call__(self, img:np.ndarray) -> np.ndarray:
         """
@@ -54,26 +38,108 @@ class ResizeBPS(object):
         returns:
             torch.Tensor: resized image.
         """
-        img_resized = cv2.resize(img, (self.resize_width, self.resize_height))
-        return img_resized
+        temp = np.resize(img, (self.width, self.height))
+        # return torch.Tensor(temp.astype(np.float32))
+        return temp
+
+class ZoomBPS(object):
+    def __init__(self, zoom: float=1) -> None:
+        self.zoom = zoom
+
+    def __call__(self, image) -> np.ndarray:
+        s = image.shape
+        s1 = (int(self.zoom*s[0]), int(self.zoom*s[1]))
+        img = np.zeros((s[0], s[1]))
+        img_resize = cv2.resize(image, (s1[1],s1[0]), interpolation = cv2.INTER_AREA)
+        # Resize the image using zoom as scaling factor with area interpolation
+        if self.zoom < 1:
+            y1 = s[0]//2 - s1[0]//2
+            y2 = s[0]//2 + s1[0] - s1[0]//2
+            x1 = s[1]//2 - s1[1]//2
+            x2 = s[1]//2 + s1[1] - s1[1]//2
+            img[y1:y2, x1:x2] = img_resize
+            return img
+        else:
+            return img_resize
+
+class VFlipBPS(object):
+    def __call__(self, image) -> np.ndarray:
+        """
+        Flip the image vertically
+        """
+        return np.flipud(image)
+
+
+class HFlipBPS(object):
+    def __call__(self, image) -> np.ndarray:
+        """
+        Flip the image horizontally
+        """
+        return np.fliplr(image)
+
+
+class RotateBPS(object):
+    def __init__(self, rotate: int) -> None:
+        self.rotation = rotate
+
+    def __call__(self, image) -> Any:
+        '''
+        Initialize an object of the Augmentation class
+        Parameters:
+            rotate (int):
+                Optional parameter to specify a 90, 180, or 270 degrees of rotation.
+        Returns:
+            np.ndarray
+        '''
+        
+        # it is 90 and stuff or smth
+        num_rots = self.rotation / 90
+        temp = np.rot90(image, num_rots)
+        return temp
+
+
+class RandomCropBPS(object):
+    """Crop randomly the image in a sample.
+
+    Args:
+        output_size (tuple or int): Desired output size. If int, square crop
+        is made.
+    """
+
+    def __init__(self, output_height: int, output_width: int):
+        self.output_height = output_height
+        self.output_width = output_width
+
+    def __call__(self, image):
+        assert image.shape[0] >= self.output_width and image.shape[1] >- self.output_height, "too small to crop"
+        
+        # get the maximum allowed starting coordinate for the crop
+        max_start_x = image.shape[0] - self.output_width
+        max_start_y = image.shape[1] - self.output_height
+
+        # start loc
+        start_x = np.random.randint(max_start_x)
+        start_y = np.random.randint(max_start_y)
+
+        image = image[start_x :(start_x + self.output_width), start_y: (start_y + self.output_height)]
+        return image
+        
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
     def __call__(self, image: np.ndarray) -> torch.Tensor:
-        # swap color axis because
         # numpy image: H x W x C
         # torch image: C x H x W
-        if len(image.shape) == 2:
-            image = image.reshape(image.shape[0], image.shape[1], 1)
-
-        img = image.transpose((2, 0, 1))
-        img_tensor = torch.from_numpy(img)
-        #img_tensor = torch.from_numpy(image).unsqueeze(0)
-        # image = image.transpose((2, 0, 1))
-        return img_tensor
+        if len(image.shape) < 3:
+            new_image = image[:, :, np.newaxis] 
+        else:
+            new_image = image
+        assert len(new_image.shape) == 3, "wrong dimensions buddy"
+        cpy = new_image.copy()
+        return torch.from_numpy(cpy).permute(2, 0, 1)
 
 def main():
-    """"""
+    """Driver function for testing the augmentations. Make sure the file paths work for you."""
     # load image using cv2
     img_key = 'P280_73668439105-F5_015_023_proj.tif'
     img_array = cv2.imread(img_key, cv2.IMREAD_ANYDEPTH)
@@ -81,58 +147,5 @@ def main():
     test_resize = ResizeBPS(500, 500)
     type(test_resize)
 
-    # test_augmentations_img = BPSAugmentations(img_array)
-
-    # test_output_normalize= test_augmentations_img.normalize_bps()
-    # test_output_resize = test_augmentations_img.resize_bps(500, 500)
-    # test_output_vflip = test_augmentations_img.v_flip()
-    # test_output_hflip = test_augmentations_img.h_flip()
-
-    # #FIXME - Fix the rotate function to include superimage after
-    # #test_output_rotate = test_augmentations_img.rotate(45)
-
-    # # Output zoom increases or decreases the overall size
-    # # of the image--must be followed up with resize in order to make
-    # # sure all images are the same for PyTorch DataLoader
-    # test_output_zoom = test_augmentations_img.zoom(3)
-    # test_zoom_resize = BPSAugmentations(test_output_zoom).resize_bps(100,100)
-    # print(test_output_zoom.shape)
-    # print(test_zoom_resize.shape)
-
-
-
-
-
-    # # Attempt to save
-
-    # # Show as tensor
-    # # plt.imshow(img_array[0][:][:])
-
-    # # Show as np.array
-    # plt.imshow(img_array)
-    # plt.savefig('augmentations_b4_test.png')
-    # # Show as np.array
-    # plt.imshow(test_output_hflip)
-    # plt.savefig('augmentations_hflip.png')
-    # plt.imshow(test_output_vflip)
-    # plt.savefig('augmentations_vflip.png')
-    # plt.imshow(test_output_resize)
-    # plt.savefig('augmentations_resize.png')
-    
-    # plt.imshow(test_zoom_resize)
-    # plt.savefig('augmentations_after_zoom_resize.png')
-
 if __name__ == "__main__":
     main()
-
-
-
-### json file with a list of aug: object like structure -> image, : List of aougment preformed, and their description
-### 
-
-
-
-# Remove the black void:
-# 1. Find dimensions to zoom in to
-# 2. Call Zoom in function
-# 3. Scale back to 64x64

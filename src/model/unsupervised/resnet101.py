@@ -82,11 +82,11 @@ class BPSConfig:
 
 
     """
-    data_dir:           str = root / 'data' / 'processed'
-    train_meta_fname:   str = 'meta_dose_hi_hr_4_post_exposure_train.csv'
-    val_meta_fname:     str = 'meta_dose_hi_hr_4_post_exposure_test.csv'
-    save_vis_dir:       str = root / 'models' / 'dummy_vis'
-    save_models_dir:    str = root / 'models' / 'baselines'
+    data_dir:           str = os.path.join(root, 'data', 'processed')
+    train_meta_fname:   str = 'meta_train.csv'
+    val_meta_fname:     str = 'meta_test.csv'
+    save_vis_dir:       str = (root , 'models' , 'dummy_vis')
+    save_models_dir:    str = (root , 'models' , 'baselines')
     batch_size:         int = 1
     max_epochs:         int = 3
     accelerator:        str = 'auto'
@@ -94,7 +94,7 @@ class BPSConfig:
     device:             str = 'cuda' if torch.cuda.is_available() else 'cpu'
     num_workers:        int = 4
     dm_stage:           str = 'train'
-    
+    print(data_dir)
 
 
 class ResNet101(resnet.ResNet):
@@ -217,8 +217,8 @@ def main():
 
     # Uncomment if you would like the save the outputs 
     # and labels of the Resnet101 
-    #np.save('resnet_features.npy', features)
-    #np.save('resnet_labels.npy', labels)
+    np.save('resnet_features.npy', features)
+    np.save('resnet_labels.npy', labels)
 
     # Reshape features to have 2 dimensions
     features = features_np.reshape(features_np.shape[0], -1)

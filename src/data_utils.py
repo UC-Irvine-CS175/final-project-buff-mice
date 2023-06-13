@@ -181,7 +181,7 @@ def export_subset_meta_dose_hr(
     # Check that dose_Gy and hr_post_exposure_val are valid
 
     #               low, med, hi
-    # Fe dose_Gy = [0.0, 0.3, 0.82]
+    # Fe dose_Gy = [0.0, 0.3, 0.82] 
     # Xray dose_Gy = [0.0, 0.1, 1.0]
     
     if ((df["particle_type"] == "Fe") & (~df["dose_Gy"].isin([0.0, 0.3, 0.82]))).any():
@@ -311,23 +311,35 @@ def main():
     #     hr_post_exposure_val=4,
     #     in_csv_path_local=local_new_path_fname,
     #     out_dir_csv=output_dir)
+   
+    path = os.getcwd()
     
-
+    # prints parent directory
+    print(os.path.abspath(os.path.join(path, os.pardir)))
+    parent = os.path.abspath(os.path.join(path, os.pardir))
     train_test_split_subset_meta_dose_hr(
-        subset_meta_dose_hr_csv_path= r"C:\Users\armen\A CS 175\final-project-buff-mice\data\processed\meta.csv",
+        subset_meta_dose_hr_csv_path= os.path.join(parent, "data", "processed", "meta.csv"), # r"C:\Users\armen\A CS 175\final-project-buff-mice\data\processed\meta.csv", 
         test_size=0.2,
         out_dir_csv=output_dir,
         random_state=42,
         stratify_col="particle_type")
 
     
-    ## save tiffs locally from s3 using boto3
-    # save_tiffs_local_from_s3(
-    # s3_client=s3_client,
-    # bucket_name=bucket_name,
-    # s3_path=s3_path,
-    # local_fnames_meta_path=subset_new_path_fname,
-    # save_file_path=local_file_path)
+    # save tiffs locally from s3 using boto3
+    # print(local_file_path)
+    save_tiffs_local_from_s3(
+    s3_client=s3_client,
+    bucket_name=bucket_name,
+    s3_path=s3_path,
+    local_fnames_meta_path=os.path.join(parent, "data", "processed", "meta_test.csv"),
+    save_file_path=os.path.join(parent, "data", "processed", "test") )
+
+    save_tiffs_local_from_s3(
+    s3_client=s3_client,
+    bucket_name=bucket_name,
+    s3_path=s3_path,
+    local_fnames_meta_path=os.path.join(parent, "data", "processed", "meta_train.csv"),
+    save_file_path=os.path.join(parent, "data", "processed", "train") )
 
 
 if __name__ == "__main__":
