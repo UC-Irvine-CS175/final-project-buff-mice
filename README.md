@@ -6,6 +6,8 @@ By Armen Gadayan @ArmenGadayan, Sevag Avedissian @SevagAvedissian , Tony Yin @Bo
 
 
 Instructions to run:
+Important: Run get_all_data.py under src\model\final to get all the data before training and testing.
+
 Training - Run squeeze_net_CNN.py or resNet_CNN.py under src\model\final to train all the data
 
 Testing - Run test_model.py under src\model\final. The default active model is squeezeNet so if you want to test the resNet model, uncomment it in the file.
